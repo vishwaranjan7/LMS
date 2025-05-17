@@ -75,6 +75,10 @@ userSchema.methods={
             .createHash('sha256')
             .update(resetToken)
             .digest('hex');
+
+            console.log("Received resetToken:", resetToken);
+            console.log("Hashed token:", forgetPasswordToken);
+
         this.forgetPasswordToken=Date.now()+ 15*60*1000; //15 min from now
 
         return resetToken;

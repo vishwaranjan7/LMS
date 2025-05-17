@@ -2,6 +2,8 @@ const User = require("../model/userModel");
 const AppError = require("../util/errorUtil");
 const cloudinary=require("cloudinary");
 const fs=require("fs/promises");
+const sendEmail = require('../util/sendEmail');
+const crypto=require("crypto")
 const cookieOption = {
   maxAge: 7 * 24 * 60 * 60 * 1000, //7days
   httpOnly: true,
@@ -137,7 +139,7 @@ const getProfile = async (req, res,next) => {
   }
 };
 
-const forgetPassword= async(req,res)=>{
+const forgetPassword= async(req,res,next)=>{
     const {email}=req.body;
 
     if(!email){
@@ -151,10 +153,59 @@ const forgetPassword= async(req,res)=>{
     }
 
     const resetToken= await user.generatePasswordResetToken();
+
+    await user.save();
+    const resetPasswordUrl= `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+      // We here need to send an email to the user with the token
+  const subject = 'Reset Password';
+  const message = `You can reset your password by clicking <a href=${resetPasswordUrl} target="_blank">Reset your password</a>\nIf the above link does not work for some reason then copy paste this link in new tab ${resetPasswordUrl}.\n If you have not requested this, kindly ignore.`;
+  console.log(message);
+  
+   try {
+      await sendEmail(email,subject,message);
+
+      res.status(200).json({
+        success:true,
+        message:`Reset password token has been sent to ${email} successfully `
+      })
+   } catch (error) {
+      user.forgetPasswordExpiry=undefined;
+      user.forgetPasswordToken=undefined;
+      await user.save();
+      return next(new AppError(error.message, 500));
+   }
+  }
+
+const resetPassword= async(req,res,next)=>{
+
+    const {resetToken}= req.params;
+    const {password}= req.body;
+
+    const forgetPasswordToken= crypto
+    .createHash("sha256")
+    .update(resetToken)
+    .digest('hex')
+
+    const user= await User.findOne({
+      forgetPasswordToken,
+      forgetPasswordExpiry:{$gt:Date.now()}
+    });
+
+    if(!user){
+      return next(new AppError("Token is invalid or expired, please try again", 500));
+    }
+
+    user.password=password;
+    user.forgetPasswordToken=undefined;
+    user.forgetPasswordExpiry=undefined;
+    user.save();
+
+    res.status(200).json({
+      success:true,
+      message:"Password changed successfully."
+    })
 }
 
-const resetPassword= async(req,res)=>{
 
-}
 
 module.exports = { register, login, logout, getProfile,forgetPassword,resetPassword };
